@@ -1,6 +1,6 @@
-# PassGuard
+# Cryptenium
 
-A secure, cloud-ready CLI password manager built in C++. PassGuard keeps your credentials encrypted locally with optional cloud sync support, designed with zero-knowledge security from the ground up.
+A secure, cloud-ready CLI password manager built in C++. Cryptenium keeps your credentials encrypted locally with optional cloud sync support, designed with zero-knowledge security from the ground up.
 
 ## Features
 
@@ -8,38 +8,38 @@ A secure, cloud-ready CLI password manager built in C++. PassGuard keeps your cr
 - **AES-256 Encryption** — all credentials encrypted before storage
 - **Password Generation** — built-in secure random password generator with customizable options
 - **Clipboard Integration** — passwords copied to clipboard on retrieval (auto-clears after a set duration)
-- **JSON Storage** — portable vault file stored locally at `~/.passguard/vault.json`
+- **JSON Storage** — portable vault file stored locally at `~/.cryptenium/vault.json`
 - **Cloud-Ready Architecture** — modular storage layer designed to support PostgreSQL, MongoDB, and REST API sync
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `passguard init` | Initialize a new password vault |
-| `passguard add --service <name> --username <user> --password <pw>` | Store a new credential |
-| `passguard get --service <name>` | Retrieve credentials for a service |
-| `passguard update --service <name> --new-password <pw>` | Update password for an entry |
-| `passguard delete --service <name> --username <user>` | Remove a credential entry |
-| `passguard list` | List all stored entries |
-| `passguard generate --length <n> [--symbols]` | Generate a secure random password |
+| `cryptenium init` | Initialize a new password vault |
+| `cryptenium add --service <name> --username <user> --password <pw>` | Store a new credential |
+| `cryptenium get --service <name>` | Retrieve credentials for a service |
+| `cryptenium update --service <name> --new-password <pw>` | Update password for an entry |
+| `cryptenium delete --service <name> --username <user>` | Remove a credential entry |
+| `cryptenium list` | List all stored entries |
+| `cryptenium generate --length <n> [--symbols]` | Generate a secure random password |
 
 ## Quick Start
 
 ```bash
 # Initialize your vault
-passguard init
+cryptenium init
 
 # Add a credential
-passguard add --service github --username alice --password secret123
+cryptenium add --service github --username alice --password secret123
 
 # List all entries
-passguard list
+cryptenium list
 
 # Retrieve a credential
-passguard get --service github
+cryptenium get --service github
 
 # Generate a password
-passguard generate --length 20 --symbols
+cryptenium generate --length 20 --symbols
 ```
 
 ## Build
@@ -51,7 +51,7 @@ passguard generate --length 20 --symbols
 ### Compile from source
 
 ```bash
-g++ -std=c++17 -I include src/main.cpp src/cli.cpp src/vault.cpp src/password_generator.cpp -o passguard
+g++ -std=c++17 -I include src/main.cpp src/cli.cpp src/vault.cpp src/password_generator.cpp -o cryptenium
 ```
 
 Or use CMake:
@@ -65,7 +65,7 @@ cmake --build .
 ## Project Structure
 
 ```
-passguard/
+cryptenium/
 ├── include/
 │   ├── cli.hpp                  # CLI command parsing
 │   ├── vault.hpp                # Vault storage interface
