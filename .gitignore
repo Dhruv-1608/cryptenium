@@ -39,4 +39,6 @@
 
 # debug information files
 *.dwo
-PROJECT_PLAN.md  
+
+# project plan (never push)
+PROJECT_PLAN.md
