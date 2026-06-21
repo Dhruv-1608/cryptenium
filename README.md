@@ -2,14 +2,46 @@
 
 A secure, cloud-ready CLI password manager built in C++. Cryptenium keeps your credentials encrypted locally with optional cloud sync support, designed with zero-knowledge security from the ground up.
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph CLI["CLI Client (C++)"]
+        Parser["Command Parser<br/>init / add / get / list / delete"]
+        Crypto["Crypto Module<br/>AES-256 · Argon2 / PBKDF2"]
+        Vault["Vault Manager<br/>JSON Storage · Sync Engine"]
+        Gen["Password Generator<br/>Secure Random"]
+    end
+
+    subgraph Local["Local Storage"]
+        File["Vault File<br/>~/.cryptenium/vault.json"]
+    end
+
+    subgraph Cloud["Cloud Backend (Optional)"]
+        API["REST API<br/>Stateless Server"]
+        DB[(Database<br/>PostgreSQL / MongoDB)]
+        Auth["Auth Service<br/>JWT · 2FA"]
+    end
+
+    Parser --> Vault
+    Vault --> File
+    Vault <-->|Encrypted Blobs| API
+    API --> DB
+    API <--> Auth
+    Crypto -->|Key Derivation| Parser
+    Gen -->|Generated Passwords| Vault
+```
+
+> *The diagram above is interactive — you can pan, zoom, and click nodes on GitHub.*
+
 ## Features
 
-- **Master Password Protection** — vault secured by Argon2/PBKDF2 derived keys
-- **AES-256 Encryption** — all credentials encrypted before storage
-- **Password Generation** — built-in secure random password generator with customizable options
-- **Clipboard Integration** — passwords copied to clipboard on retrieval (auto-clears after a set duration)
-- **JSON Storage** — portable vault file stored locally at `~/.cryptenium/vault.json`
-- **Cloud-Ready Architecture** — modular storage layer designed to support PostgreSQL, MongoDB, and REST API sync
+- **Master Password Protection** — vault secured by Argon2/PBKDF2 derived keys, never stored in plaintext
+- **AES-256 Encryption** — all credentials encrypted before storage; zero-knowledge by design
+- **Password Generation** — built-in secure random password generator with customizable length and character sets
+- **Clipboard Integration** — passwords copied to clipboard on retrieval, automatically cleared after a configurable duration
+- **JSON Storage** — lightweight, portable vault file at `~/.cryptenium/vault.json`
+- **Cloud-Ready Architecture** — modular storage layer built for PostgreSQL, MongoDB, and REST API sync
 
 ## Commands
 
