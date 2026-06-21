@@ -79,15 +79,6 @@ passguard/
 └── README.md
 ```
 
-## Roadmap
-
-- **Phase 1** — Local CLI vault with JSON storage ✅
-- **Phase 2** — Master password + AES-256 encryption
-- **Phase 3** — Cloud sync via REST API
-- **Phase 4** — Zero-knowledge hardening, 2FA
-- **Phase 5** — Open source release + hosted service
-- **Phase 6** — Premium features (sharing, audit logs)
-
 ## License
 
-Open source.
+Distributed under the MIT License. See `LICENSE` for more information.
