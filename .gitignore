@@ -40,5 +40,12 @@
 # debug information files
 *.dwo
 
+# Build directory
+build/
+
 # project plan (never push)
 PROJECT_PLAN.md
+
+# Test artifacts
+testhome/
+*.hex
