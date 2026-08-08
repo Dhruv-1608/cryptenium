@@ -1,11 +1,14 @@
 #include "cli.hpp"
-#include "vault.hpp"
 #include "password_generator.hpp"
+#include "platform.hpp"
+#include "vault.hpp"
 
+#include <chrono>
 #include <iostream>
-#include <sstream>
+#include <stdexcept>
+#include <thread>
 
-namespace passguard {
+namespace cryptenium {
 
 namespace {
 
@@ -21,16 +24,40 @@ void print_yellow(const std::string& msg) { std::cout << YELLOW << msg << RESET 
 void print_red(const std::string& msg)    { std::cout << RED    << msg << RESET << "\n"; }
 void print_cyan(const std::string& msg)   { std::cout << CYAN   << msg << RESET << "\n"; }
 
-std::string read_password(const std::string& prompt) {
-    std::cout << prompt;
-    std::string pwd;
-    std::getline(std::cin, pwd);
-    return pwd;
+// Prompts for the master password twice and requires a match.
+std::string prompt_new_master_password() {
+    while (true) {
+        std::string p1 = platform::read_password("Enter master password: ");
+        std::string p2 = platform::read_password("Confirm master password: ");
+        if (p1 == p2) {
+            return p1;
+        }
+        print_red("Passwords do not match. Try again.");
+    }
+}
+
+// Reads a plain (echoed) line, stripping a trailing carriage return that can
+// appear when stdin is piped on Windows.
+std::string read_line() {
+    std::string line;
+    std::getline(std::cin, line);
+    // Trim trailing whitespace (CR, LF, spaces) that can appear when stdin is
+    // piped on Windows.
+    while (!line.empty() &&
+           (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) {
+        line.pop_back();
+    }
+    return line;
 }
 
 } // anonymous namespace
 
 int CLI::run(int argc, char* argv[]) {
+    if (!crypto::init()) {
+        print_red("Fatal: failed to initialize cryptography (libsodium).");
+        return 1;
+    }
+
     if (argc < 2) {
         print_usage();
         return 1;
@@ -39,13 +66,16 @@ int CLI::run(int argc, char* argv[]) {
     std::vector<std::string> args(argv + 1, argv + argc);
     std::string command = args[0];
 
-    if (command == "init")        return cmd_init(args);
-    if (command == "add")         return cmd_add(args);
-    if (command == "get")         return cmd_get(args);
-    if (command == "update")      return cmd_update(args);
-    if (command == "delete")      return cmd_delete(args);
-    if (command == "list")        return cmd_list(args);
-    if (command == "generate")    return cmd_generate(args);
+    if (command == "init")     return cmd_init(args);
+    if (command == "add")      return cmd_add(args);
+    if (command == "get")      return cmd_get(args);
+    if (command == "list")     return cmd_list(args);
+    if (command == "delete")   return cmd_delete(args);
+    if (command == "generate") return cmd_generate(args);
+    if (command == "--version" || command == "version") {
+        print_version();
+        return 0;
+    }
     if (command == "--help" || command == "help") {
         print_usage();
         return 0;
@@ -56,28 +86,33 @@ int CLI::run(int argc, char* argv[]) {
     return 1;
 }
 
+void CLI::print_version() {
+    std::cout << "cryptenium 1.0.0 (encrypted vault, Argon2id + XChaCha20-Poly1305)\n";
+}
+
 void CLI::print_usage() {
-    std::cout << BOLD << "PassGuard " << RESET << "- CLI Password Manager\n"
+    std::cout << BOLD << "Cryptenium " << RESET << "- CLI Password Manager (encrypted vault)\n"
               << "\n"
               << "Usage:\n"
-              << "  passguard init                           Initialize a new vault\n"
-              << "  passguard add --service <s> --username <u> [--password <p>|--generate]\n"
-              << "                                            Add credentials\n"
-              << "  passguard get --service <s> [--username <u>]\n"
-              << "                                            Retrieve credentials\n"
-              << "  passguard update --service <s> [--username <u>] --new-password <p>\n"
-              << "                                            Update password\n"
-              << "  passguard delete --service <s> [--username <u>]\n"
-              << "                                            Delete credentials\n"
-              << "  passguard list                           List all entries\n"
-              << "  passguard generate [--length <n>] [--no-digits] [--no-lower]\n"
+              << "  cryptenium init                          Initialize a new encrypted vault\n"
+              << "  cryptenium add --service <s> --username <u> [--password <p>|--generate]\n"
+              << "                                            Store a credential (prompts master password)\n"
+              << "  cryptenium get --service <s> [--username <u>]\n"
+              << "                                            Retrieve a credential (copies password to clipboard)\n"
+              << "  cryptenium list                          List all stored entries\n"
+              << "  cryptenium delete --service <s> [--username <u>]\n"
+              << "                                            Delete a credential\n"
+              << "  cryptenium generate [--length <n>] [--no-digits] [--no-lower]\n"
               << "                     [--no-upper] [--symbols]\n"
-              << "                                            Generate a random password\n"
-              << "  passguard help                           Show this help\n";
+              << "                                            Generate a secure random password\n"
+              << "  cryptenium version                       Show version\n"
+              << "  cryptenium help                          Show this help\n"
+              << "\n"
+              << "The vault is stored encrypted at " << Vault::default_vault_path() << "\n";
 }
 
 std::string CLI::get_flag(const std::vector<std::string>& args,
-                           const std::string& key) {
+                          const std::string& key) {
     for (std::size_t i = 0; i + 1 < args.size(); ++i) {
         if (args[i] == key) {
             return args[i + 1];
@@ -87,7 +122,7 @@ std::string CLI::get_flag(const std::vector<std::string>& args,
 }
 
 bool CLI::has_flag(const std::vector<std::string>& args,
-                    const std::string& key) {
+                   const std::string& key) {
     for (const auto& a : args) {
         if (a == key) return true;
     }
@@ -98,17 +133,28 @@ int CLI::cmd_init(const std::vector<std::string>& /*args*/) {
     std::string path = Vault::default_vault_path();
 
     if (Vault::exists(path)) {
-        print_yellow("Vault already exists at " + path);
+        print_yellow("A vault already exists at " + path);
         return 0;
     }
 
-    if (Vault::create(path)) {
-        print_green("Vault initialized successfully at " + path);
-        return 0;
+    std::string master = prompt_new_master_password();
+    if (master.empty()) {
+        print_red("Master password cannot be empty.");
+        return 1;
     }
 
-    print_red("Failed to create vault at " + path);
-    return 1;
+    try {
+        if (Vault::create(path, master)) {
+            print_green("Vault initialized successfully at " + path);
+            print_yellow("Remember your master password — it cannot be recovered.");
+            return 0;
+        }
+        print_red("Failed to create vault at " + path);
+        return 1;
+    } catch (const std::exception& e) {
+        print_red(std::string("Error: ") + e.what());
+        return 1;
+    }
 }
 
 int CLI::cmd_add(const std::vector<std::string>& args) {
@@ -117,30 +163,34 @@ int CLI::cmd_add(const std::vector<std::string>& args) {
     std::string password = get_flag(args, "--password");
 
     if (service.empty() || username.empty()) {
-        print_red("Usage: passguard add --service <s> --username <u> [--password <p>|--generate]");
+        print_red("Usage: cryptenium add --service <s> --username <u> [--password <p>|--generate]");
         return 1;
-    }
-
-    if (has_flag(args, "--generate") || password.empty()) {
-        PasswordGenerator::Options opts;
-        opts.use_symbols = has_flag(args, "--symbols");
-        password = PasswordGenerator::generate_with_opts(16, opts);
-        print_cyan("Generated password: " + password);
     }
 
     std::string path = Vault::default_vault_path();
     if (!Vault::exists(path)) {
-        print_red("No vault found. Run 'passguard init' first.");
+        print_red("No vault found. Run 'cryptenium init' first.");
         return 1;
     }
 
     try {
-        auto entries = Vault::load(path);
-        if (!Vault::add_entry(entries, {service, username, password})) {
+        std::string master = platform::read_password("Enter master password: ");
+
+        Vault vault;
+        vault.open(path, master);
+
+        if (has_flag(args, "--generate") || password.empty()) {
+            PasswordGenerator::Options opts;
+            opts.use_symbols = has_flag(args, "--symbols");
+            password = PasswordGenerator::generate_with_opts(16, opts);
+            print_cyan("Generated password: " + password);
+        }
+
+        if (!vault.add({service, username, password})) {
             print_yellow("Entry for " + service + " (" + username + ") already exists.");
             return 1;
         }
-        Vault::save(path, entries);
+        vault.save();
         print_green("Password for " + service + " (" + username + ") stored successfully.");
     } catch (const std::exception& e) {
         print_red(std::string("Error: ") + e.what());
@@ -154,27 +204,39 @@ int CLI::cmd_get(const std::vector<std::string>& args) {
     std::string username = get_flag(args, "--username");
 
     if (service.empty()) {
-        print_red("Usage: passguard get --service <s> [--username <u>]");
+        print_red("Usage: cryptenium get --service <s> [--username <u>]");
         return 1;
     }
 
     std::string path = Vault::default_vault_path();
     if (!Vault::exists(path)) {
-        print_red("No vault found. Run 'passguard init' first.");
+        print_red("No vault found. Run 'cryptenium init' first.");
         return 1;
     }
 
     try {
-        auto entries = Vault::load(path);
-        auto entry = Vault::find(entries, service, username);
+        std::string master = platform::read_password("Enter master password: ");
+
+        Vault vault;
+        vault.open(path, master);
+
+        auto entry = vault.find(service, username);
         if (!entry) {
             print_red("No entry found for " + service +
                       (username.empty() ? "" : " (" + username + ")"));
             return 1;
         }
+
         std::cout << "Service:  " << entry->service  << "\n"
                   << "Username: " << entry->username << "\n"
-                  << "Password: " << entry->password << " (copied to clipboard)\n";
+                  << "Password: ";
+        if (platform::clipboard_copy(entry->password)) {
+            print_yellow("************ (copied to clipboard, clears in 15s)");
+            std::this_thread::sleep_for(std::chrono::seconds(15));
+            platform::clipboard_clear();
+        } else {
+            std::cout << entry->password << "\n";
+        }
     } catch (const std::exception& e) {
         print_red(std::string("Error: ") + e.what());
         return 1;
@@ -182,33 +244,29 @@ int CLI::cmd_get(const std::vector<std::string>& args) {
     return 0;
 }
 
-int CLI::cmd_update(const std::vector<std::string>& args) {
-    std::string service     = get_flag(args, "--service");
-    std::string username    = get_flag(args, "--username");
-    std::string new_password = get_flag(args, "--new-password");
-
-    if (service.empty() || new_password.empty()) {
-        print_red("Usage: passguard update --service <s> [--username <u>] --new-password <p>");
-        return 1;
-    }
-
+int CLI::cmd_list(const std::vector<std::string>& /*args*/) {
     std::string path = Vault::default_vault_path();
     if (!Vault::exists(path)) {
-        print_red("No vault found. Run 'passguard init' first.");
-        return 1;
+        print_yellow("No vault found. Run 'cryptenium init' first.");
+        return 0;
     }
 
     try {
-        auto entries = Vault::load(path);
-        if (!Vault::update_entry(entries, service, username, new_password)) {
-            print_red("No entry found for " + service +
-                      (username.empty() ? "" : " (" + username + ")"));
-            return 1;
+        std::string master = platform::read_password("Enter master password: ");
+
+        Vault vault;
+        vault.open(path, master);
+
+        const auto& entries = vault.entries();
+        if (entries.empty()) {
+            print_yellow("No entries in vault. Use 'cryptenium add' to add credentials.");
+            return 0;
         }
-        Vault::save(path, entries);
-        print_green("Password for " + service +
-                    (username.empty() ? "" : " (" + username + ")") +
-                    " updated successfully.");
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            std::cout << (i + 1) << ". " << entries[i].service
+                      << " (" << entries[i].username << ")\n";
+        }
+        std::cout << "Total entries: " << entries.size() << "\n";
     } catch (const std::exception& e) {
         print_red(std::string("Error: ") + e.what());
         return 1;
@@ -221,20 +279,23 @@ int CLI::cmd_delete(const std::vector<std::string>& args) {
     std::string username = get_flag(args, "--username");
 
     if (service.empty()) {
-        print_red("Usage: passguard delete --service <s> [--username <u>]");
+        print_red("Usage: cryptenium delete --service <s> [--username <u>]");
         return 1;
     }
 
     std::string path = Vault::default_vault_path();
     if (!Vault::exists(path)) {
-        print_red("No vault found. Run 'passguard init' first.");
+        print_red("No vault found. Run 'cryptenium init' first.");
         return 1;
     }
 
     try {
-        auto entries = Vault::load(path);
+        std::string master = platform::read_password("Enter master password: ");
 
-        auto entry = Vault::find(entries, service, username);
+        Vault vault;
+        vault.open(path, master);
+
+        auto entry = vault.find(service, username);
         if (!entry) {
             print_red("No entry found for " + service +
                       (username.empty() ? "" : " (" + username + ")"));
@@ -243,41 +304,16 @@ int CLI::cmd_delete(const std::vector<std::string>& args) {
 
         std::cout << "Are you sure you want to delete credentials for "
                   << entry->service << " (" << entry->username << ")? (y/N): ";
-        std::string confirm;
-        std::getline(std::cin, confirm);
+        std::string confirm = read_line();
         if (confirm != "y" && confirm != "Y") {
             print_yellow("Deletion cancelled.");
             return 0;
         }
 
-        Vault::delete_entry(entries, service, username);
-        Vault::save(path, entries);
+        vault.remove(service, username);
+        vault.save();
         print_green("Credentials for " + entry->service + " (" +
                     entry->username + ") deleted successfully.");
-    } catch (const std::exception& e) {
-        print_red(std::string("Error: ") + e.what());
-        return 1;
-    }
-    return 0;
-}
-
-int CLI::cmd_list(const std::vector<std::string>& /*args*/) {
-    std::string path = Vault::default_vault_path();
-    if (!Vault::exists(path)) {
-        print_yellow("Vault is empty or not initialized. Run 'passguard init' first.");
-        return 0;
-    }
-
-    try {
-        auto entries = Vault::load(path);
-        if (entries.empty()) {
-            print_yellow("No entries in vault. Use 'passguard add' to add credentials.");
-            return 0;
-        }
-        auto lines = Vault::list_entries(entries);
-        for (const auto& line : lines) {
-            std::cout << line << "\n";
-        }
     } catch (const std::exception& e) {
         print_red(std::string("Error: ") + e.what());
         return 1;
@@ -314,4 +350,4 @@ int CLI::cmd_generate(const std::vector<std::string>& args) {
     return 0;
 }
 
-} // namespace passguard
+} // namespace cryptenium
