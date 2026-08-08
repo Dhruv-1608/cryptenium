@@ -1,8 +1,10 @@
 #include "password_generator.hpp"
-#include <random>
+
+#include "crypto/Crypto.h"
+
 #include <stdexcept>
 
-namespace passguard {
+namespace cryptenium {
 
 std::string PasswordGenerator::generate_with_opts(std::size_t length, const Options& opts) {
     if (length == 0) {
@@ -13,22 +15,34 @@ std::string PasswordGenerator::generate_with_opts(std::size_t length, const Opti
     if (opts.use_lowercase) chars += "abcdefghijklmnopqrstuvwxyz";
     if (opts.use_uppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     if (opts.use_digits)    chars += "0123456789";
-    if (opts.use_symbols)   chars += "!@#$%^&*()_+-=[]{}|;':\",./<>?~`";
+    if (opts.use_symbols)   chars += "!@#$%^&*()-_=+[]{}|;:,.<>?/~";
 
     if (chars.empty()) {
         throw std::invalid_argument("at least one character set must be enabled");
     }
 
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_int_distribution<std::size_t> dist(0, chars.size() - 1);
+    // Uniform selection via rejection sampling from the CSPRNG.
+    // Choose the smallest power of two >= chars.size() to avoid modulo bias.
+    std::size_t range = 1;
+    while (range < chars.size()) range <<= 1;
 
     std::string result;
     result.reserve(length);
-    for (std::size_t i = 0; i < length; ++i) {
-        result += chars[dist(gen)];
+    while (result.size() < length) {
+        std::vector<unsigned char> buf(1);
+        crypto::fill_random(buf.data(), buf.size());
+        std::size_t idx = buf[0] % range;
+        if (idx < chars.size()) {
+            result += chars[idx];
+        }
     }
     return result;
 }
 
-} // namespace passguard
+std::string PasswordGenerator::generate(std::size_t length) {
+    Options opts;
+    opts.use_symbols = true;
+    return generate_with_opts(length, opts);
+}
+
+} // namespace cryptenium

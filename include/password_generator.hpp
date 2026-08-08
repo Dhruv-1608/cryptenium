@@ -1,10 +1,13 @@
-#ifndef PASSGUARD_PASSWORD_GENERATOR_HPP
-#define PASSGUARD_PASSWORD_GENERATOR_HPP
+#ifndef CRYPTENIUM_PASSWORD_GENERATOR_HPP
+#define CRYPTENIUM_PASSWORD_GENERATOR_HPP
 
+#include <cstddef>
 #include <string>
 
-namespace passguard {
+namespace cryptenium {
 
+// Cryptographically-secure random password generation built on libsodium's
+// CSPRNG. Replaces the old std::mt19937-based generator.
 class PasswordGenerator {
 public:
     struct Options {
@@ -14,9 +17,15 @@ public:
         bool use_symbols = false;
     };
 
+    // Generates a random password of the given length using the enabled
+    // character sets. Throws std::invalid_argument if length is 0 or no
+    // character set is enabled.
     static std::string generate_with_opts(std::size_t length, const Options& opts);
+
+    // Convenience: all sets on (symbols too).
+    static std::string generate(std::size_t length);
 };
 
-} // namespace passguard
+} // namespace cryptenium
 
-#endif // PASSGUARD_PASSWORD_GENERATOR_HPP
+#endif // CRYPTENIUM_PASSWORD_GENERATOR_HPP
